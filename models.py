@@ -79,6 +79,7 @@ class GameEquipment(Base):
     cpu_use: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
     pg_use: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
     base_price: Mapped[float] = mapped_column(Float, nullable=False, default=5000.0)
+    skill_type: Mapped[str] = mapped_column(String(20), nullable=False, default="gunnery")  # 需要的技能类型
     min_skill: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -128,8 +129,14 @@ class GamePlayer(Base):
     hull: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     armor: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     shield: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
-    skill_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    xp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # 技能系统：经验池 + 各技能等级
+    unallocated_xp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # 未分配经验
+    last_xp_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)             # 上次结算时间经验
+    ship_skill: Mapped[int] = mapped_column(Integer, nullable=False, default=0)          # 舰船操控
+    gunnery_skill: Mapped[int] = mapped_column(Integer, nullable=False, default=0)       # 炮术
+    shield_skill: Mapped[int] = mapped_column(Integer, nullable=False, default=0)        # 护盾
+    armor_skill: Mapped[int] = mapped_column(Integer, nullable=False, default=0)         # 装甲
+    engineering_skill: Mapped[int] = mapped_column(Integer, nullable=False, default=0)   # 工程
     last_action_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 

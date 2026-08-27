@@ -71,6 +71,40 @@ ACTION_COOLDOWN = 2
 # 移动/跃迁冷却（秒）
 MOVE_COOLDOWN = 5
 
+# ==================== 技能系统（EVE 式多分支） ====================
+# 经验获取：随时间增长 + PvP 胜利
+XP_PER_MINUTE = 0.2          # 每分钟获得经验（每 5 分钟 1 点）
+XP_PVP_WIN = 50.0            # PvP 胜利获得经验
+SKILL_XP_BASE = 100.0        # 技能 0→1 级所需经验（每级为前一级 10 倍）
+
+# 技能定义：key -> (中文名, 说明)
+SKILLS: dict[str, tuple[str, str]] = {
+    "ship": ("舰船操控", "决定能驾驶的舰船等级"),
+    "gunnery": ("炮术", "提高武器伤害"),
+    "shield": ("护盾", "提高护盾量与护盾装备"),
+    "armor": ("装甲", "提高装甲量与装甲装备"),
+    "engineering": ("工程", "提高装配能力与结构/推进装备"),
+}
+
+# 技能属性字段映射
+SKILL_FIELD = {
+    "ship": "ship_skill",
+    "gunnery": "gunnery_skill",
+    "shield": "shield_skill",
+    "armor": "armor_skill",
+    "engineering": "engineering_skill",
+}
+
+# 装备效果类型 -> 所需技能
+EQUIP_SKILL_BY_EFFECT = {
+    "damage": "gunnery",
+    "shield": "shield",
+    "armor": "armor",
+    "hull": "engineering",
+    "escape": "engineering",
+    "resist": "engineering",
+}
+
 # 行动点：每行动扣 1，每 60 秒恢复 1，上限 MAX_ACTION
 MAX_ACTION = 10
 ACTION_RECOVER_SECONDS = 60
@@ -412,6 +446,7 @@ MENU_SECTIONS: dict[str, tuple[str, list[tuple[str, str]]]] = {
     "combat": ("战斗", [("hunt", "巡逻遇敌"), ("fight", "开火"), ("flee", "逃跑")]),
     "fleet": ("舰队", [("fleet", "我的舰队"), ("upgrade 船名", "购买舰船"), ("switch 船名", "切换驾驶"), ("fittings", "配装"), ("install 装备", "安装"), ("uninstall 装备", "卸下")]),
     "mission": ("任务", [("mission", "查看任务"), ("mission new", "接取新任务")]),
+    "skill": ("技能", [("skills", "查看技能与经验"), ("train 技能名", "分配经验到技能")]),
     "status": ("状态", [("status", "我的状态"), ("attack 玩家", "PvP 攻击"), ("report", "PvP 战报")]),
 }
 
@@ -608,6 +643,54 @@ async def _player_ship(player: GamePlayer) -> GameShip | None:
     return await _get_ship(player.ship_id)
 
 
+# ==================== 技能系统辅助 ====================
+
+def _skill_level_of(player: GamePlayer, skill: str) -> int:
+    """获取玩家指定技能等级"""
+    return getattr(player, SKILL_FIELD.get(skill, "ship_skill"), 0)
+
+
+def _skill_cost(level: int) -> float:
+    """从 level 升到 level+1 所需经验（每级为前一级 10 倍）"""
+    return SKILL_XP_BASE * (10 ** level)
+
+
+async def _settle_xp(player: GamePlayer) -> float:
+    """结算时间累积的经验到经验池，返回本次新增经验"""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    last = player.last_xp_time
+    if last is None:
+        player.last_xp_time = now
+        return 0.0
+    if last.tzinfo is not None:
+        last = last.replace(tzinfo=None)
+    elapsed_min = max(0.0, (now - last).total_seconds() / 60.0)
+    gained = elapsed_min * XP_PER_MINUTE
+    player.unallocated_xp += gained
+    player.last_xp_time = now
+    return gained
+
+
+async def _ensure_xp(player: GamePlayer) -> None:
+    """确保玩家时间经验已结算（在指令处理前调用，落库）"""
+    async with get_session() as session:
+        result = await session.execute(select(GamePlayer).where(GamePlayer.id == player.id))
+        p = result.scalar_one_or_none()
+        if p:
+            await _settle_xp(p)
+            await session.commit()
+            player.unallocated_xp = p.unallocated_xp
+            player.last_xp_time = p.last_xp_time
+
+
+def _max_skill(player: GamePlayer) -> int:
+    """最高技能等级（用于任务门槛等）"""
+    return max(
+        player.ship_skill, player.gunnery_skill,
+        player.shield_skill, player.armor_skill, player.engineering_skill,
+    )
+
+
 # ==================== 指令 ====================
 
 @on_command("start", aliases=["注册", "开始游戏", "菜单", "主菜单"])
@@ -668,6 +751,8 @@ async def handle_status(ctx):
     if not player:
         await ctx.finish("你还没有注册角色，发送 `start` 开始游戏")
 
+    await _ensure_xp(player)
+
     ship = await _get_ship(player.ship_id)
     system = await _get_system(player.system_id)
 
@@ -696,7 +781,11 @@ async def handle_status(ctx):
     ]
     if combat_line:
         lines.append(combat_line)
-    lines.append(f"· 技能等级：`{player.skill_level}` 经验：`{player.xp:.0f}`")
+    lines.append(f"· 经验池：`{player.unallocated_xp:.0f} XP`")
+    lines.append(
+        f"· 技能：舰船{player.ship_skill} 炮术{player.gunnery_skill} "
+        f"护盾{player.shield_skill} 装甲{player.armor_skill} 工程{player.engineering_skill}"
+    )
 
     # 货舱
     async with get_session() as session:
@@ -1177,8 +1266,8 @@ async def handle_buy(ctx):
 # ==================== Phase 3: PvE 战斗 ====================
 
 def _player_damage(player: GamePlayer, ship: GameShip) -> float:
-    """玩家基础伤害 = 舰船火力 + 技能加成"""
-    return ship.damage * (1 + player.skill_level * 0.1)
+    """玩家基础伤害 = 舰船火力 + 炮术技能加成"""
+    return ship.damage * (1 + _skill_level_of(player, "gunnery") * 0.1)
 
 
 async def _player_ammo_bonus(player_id: int) -> float:
@@ -1316,7 +1405,7 @@ async def handle_fight(ctx):
     ammo_bonus = await _player_ammo_bonus(player.id)
 
     # 玩家伤害（配船火力 + 弹药加成，含随机波动）
-    base_damage = stats["damage"] * (1 + player.skill_level * 0.1)
+    base_damage = stats["damage"] * (1 + _skill_level_of(player, "gunnery") * 0.1)
     player_dmg = (base_damage + ammo_bonus) * random.uniform(0.8, 1.2)
     player_dmg = max(1.0, player_dmg)
 
@@ -1336,11 +1425,6 @@ async def handle_fight(ctx):
             p = result.scalar_one_or_none()
             if p:
                 p.isk += combat.npc_reward
-                p.xp += combat.npc_xp_reward
-                # 经验升级
-                while p.xp >= (p.skill_level + 1) * 100:
-                    p.xp -= (p.skill_level + 1) * 100
-                    p.skill_level += 1
                 p.last_action_at = datetime.now(timezone.utc).replace(tzinfo=None)
             await session.commit()
             player_result = p
@@ -1356,12 +1440,9 @@ async def handle_fight(ctx):
             f"· `{combat.npc_name}` 已被摧毁",
             f"· 你造成了 `{player_dmg:.0f}` 点伤害",
             f"· 获得：`+{combat.npc_reward:,.0f} ISK`",
-            f"· 获得：`+{combat.npc_xp_reward:.0f}` 经验",
         ]
         if mission_completed and mission:
             lines.append(f"✅ **任务完成！** `{mission.name}` 奖励 `+{mission.reward_isk:,.0f} ISK`")
-        if player_result and player_result.skill_level > 0:
-            lines.append(f"· 技能等级提升至：`{player_result.skill_level}`！")
         lines.append(f"· 当前资金：`{player_result.isk:,.0f} ISK`" if player_result else "")
         lines.append(f"\n点击 {_cmd('hunt', '继续巡逻')}")
         lines.append(_page_hint("combat"))
@@ -1539,11 +1620,11 @@ async def handle_flee(ctx):
 # ==================== Phase 4: PvP 玩家对战 ====================
 
 async def _pvp_player_power(player: GamePlayer, ship: GameShip) -> float:
-    """PvP 战斗力 = 配船火力 × 配船血量系数 × 技能"""
+    """PvP 战斗力 = 配船火力 × 配船血量系数 × 炮术技能"""
     stats = await _fleet_stats(player, ship)
     total_hp = stats["hull"] + stats["armor"] + stats["shield"]
     hp_factor = total_hp / 100.0
-    return stats["damage"] * (1 + player.skill_level * 0.1) * hp_factor * 0.01
+    return stats["damage"] * (1 + _skill_level_of(player, "gunnery") * 0.1) * hp_factor * 0.01
 
 
 @on_command("attack", aliases=["攻击", "宣战", "pvp"])
@@ -1674,10 +1755,7 @@ async def _pvp_resolve(ctx, attacker: GamePlayer, defender: GamePlayer, system: 
         w = result.scalar_one_or_none()
         if w:
             w.isk += loser_drop
-            w.xp += 50.0  # PvP 胜利经验
-            while w.xp >= (w.skill_level + 1) * 100:
-                w.xp -= (w.skill_level + 1) * 100
-                w.skill_level += 1
+            w.unallocated_xp += XP_PVP_WIN  # PvP 胜利经验进经验池
             w.last_action_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         result2 = await session.execute(select(GamePlayer).where(GamePlayer.id == loser.id))
@@ -1794,8 +1872,8 @@ async def _accept_mission(player_id: int) -> GameMission | None:
         result = await session.execute(select(GameMission))
         all_missions = list(result.scalars().all())
 
-    # 过滤技能等级够的任务
-    eligible = [m for m in all_missions if player and player.skill_level >= m.min_skill]
+    # 过滤技能等级够的任务（按最高技能等级）
+    eligible = [m for m in all_missions if player and _max_skill(player) >= m.min_skill]
     if not eligible:
         return None
 
@@ -1839,10 +1917,7 @@ async def _mission_progress(player_id: int, mission_type: str, target_item: str,
             pl = result2.scalar_one_or_none()
             if pl:
                 pl.isk += mission.reward_isk
-                pl.xp += mission.reward_xp
-                while pl.xp >= (pl.skill_level + 1) * 100:
-                    pl.xp -= (pl.skill_level + 1) * 100
-                    pl.skill_level += 1
+                pl.unallocated_xp += mission.reward_xp  # 任务奖励经验进经验池
             await session.commit()
     return mission, completed
 
@@ -1919,8 +1994,9 @@ async def handle_upgrade(ctx):
     ship_name = ctx.args_text.strip()
 
     lines = [f"🛸 **舰船商店**\n"]
+    ship_skill = _skill_level_of(player, "ship")
     for s in ships:
-        can_buy = player.isk >= s.cost and player.skill_level >= s.min_skill
+        can_buy = player.isk >= s.cost and ship_skill >= s.min_skill
         if s.id in owned_ids:
             mark = "（当前）" if s.id == player.ship_id else "（已拥有）"
         else:
@@ -1951,10 +2027,11 @@ async def handle_upgrade(ctx):
         await ctx.finish(
             f"资金不足：`{target.name}` 需要 `{target.cost:,.0f} ISK`，你只有 `{player.isk:,.0f} ISK`"
         )
-    if player.skill_level < target.min_skill:
+    ship_skill = _skill_level_of(player, "ship")
+    if ship_skill < target.min_skill:
         await ctx.finish(
-            f"技能等级不足：需要 `{target.min_skill}` 级，你只有 `{player.skill_level}` 级。"
-            f"击杀 NPC 获得经验升级"
+            f"舰船操控等级不足：驾驶 `{target.name}` 需要 {target.min_skill} 级，"
+            f"你只有 {ship_skill} 级。发送 `train 舰船操控` 提升"
         )
 
     async with get_session() as session:
@@ -2233,6 +2310,11 @@ async def _fleet_stats(player: GamePlayer, ship: GameShip) -> dict:
         elif eq.effect_type == "resist":
             resist += eq.effect_value
 
+    # 技能加成：炮术→伤害、护盾→护盾量、装甲→装甲量（每级 +5%）
+    total_damage *= (1 + _skill_level_of(player, "gunnery") * 0.05)
+    total_shield *= (1 + _skill_level_of(player, "shield") * 0.05)
+    total_armor *= (1 + _skill_level_of(player, "armor") * 0.05)
+
     return {
         "damage": total_damage,
         "shield": total_shield,
@@ -2329,9 +2411,15 @@ async def handle_install(ctx):
     if not eq:
         await ctx.finish(f"「{equip_name}」不是可安装的装备")
 
-    # 技能等级要求
-    if player.skill_level < eq.min_skill:
-        await ctx.finish(f"技能等级不足：`{eq.name}` 需要 {eq.min_skill} 级")
+    # 技能等级要求（按装备效果类型推断所需技能）
+    eq_skill = EQUIP_SKILL_BY_EFFECT.get(eq.effect_type) or eq.skill_type or "gunnery"
+    skill_level = _skill_level_of(player, eq_skill)
+    skill_name = SKILLS.get(eq_skill, ("未知", ""))[0]
+    if skill_level < eq.min_skill:
+        await ctx.finish(
+            f"技能不足：`{eq.name}` 需要「{skill_name}」{eq.min_skill} 级，"
+            f"你只有 {skill_level} 级。发送 `train {skill_name}` 提升"
+        )
 
     ship = await _get_ship(player.ship_id)
     installed = await _get_installed(player.id, player.ship_id)
@@ -2435,6 +2523,100 @@ async def handle_uninstall(ctx):
     await ctx.finish_markdown(
         f"🔧 **卸下完成**\n"
         f"· 已卸下 `{target_eq.name}`，放回货舱"
+    )
+
+
+# ==================== 技能指令 ====================
+
+@on_command("skills", aliases=["技能", "我的技能"])
+async def handle_skills(ctx):
+    """查看技能与经验池"""
+    player = await _get_player(ctx.user_openid)
+    if not player:
+        await ctx.finish("你还没有注册角色，发送 `start` 开始游戏")
+
+    await _ensure_xp(player)
+
+    lines = [
+        f"📚 **技能与经验**",
+        f"· 经验池：`{player.unallocated_xp:.0f} XP`（随时间增长，发送 `train 技能名` 分配）",
+        f"",
+    ]
+    for key, (name, desc) in SKILLS.items():
+        level = _skill_level_of(player, key)
+        next_cost = _skill_cost(level)
+        lines.append(
+            f"━━━ {name} ━━━\n"
+            f"· 等级：`{level}` ｜ 描述：{desc}\n"
+            f"· 升到 {level + 1} 级需：`{next_cost:,.0f} XP`"
+        )
+    lines.append("")
+    lines.append(f"💡 发送 {_cmd('train 舰船操控', 'train 舰船操控')} 将经验投入技能")
+    lines.append(f"🔬 技能每升一级所需经验为上一级的 10 倍")
+
+    await ctx.finish_markdown("\n".join(lines))
+
+
+@on_command("train", aliases=["学习", "训练", "加点"])
+async def handle_train(ctx):
+    """把经验池经验投入指定技能"""
+    player = await _get_player(ctx.user_openid)
+    if not player:
+        await ctx.finish("你还没有注册角色，发送 `start` 开始游戏")
+
+    await _ensure_xp(player)
+
+    arg = ctx.args_text.strip().lower()
+    if not arg:
+        await ctx.finish_markdown(
+            f"📚 **训练技能**\n"
+            f"· 经验池：`{player.unallocated_xp:.0f} XP`\n"
+            f"· 用法：`train 技能名`\n"
+            f"· 可选技能：{'、'.join(f'`{n}`' for n, _ in SKILLS.values())}"
+        )
+
+    # 匹配技能名（支持中文名/key）
+    skill_key = None
+    for key, (name, _) in SKILLS.items():
+        if arg == name.lower() or arg == key:
+            skill_key = key
+            break
+    if not skill_key:
+        await ctx.finish(f"未知技能「{arg}」。可用：{'、'.join(f'`{n}`' for n, _ in SKILLS.values())}")
+
+    current = _skill_level_of(player, skill_key)
+    next_cost = _skill_cost(current)
+
+    if player.unallocated_xp < next_cost:
+        await ctx.finish(
+            f"经验不足：`{SKILLS[skill_key][0]}` 升到 {current + 1} 级需要 `{next_cost:,.0f} XP`，"
+            f"你只有 `{player.unallocated_xp:.0f} XP`。经验随时间增长或 PvP 胜利获得"
+        )
+
+    # 一次可连升多级（若经验足够）
+    spent = 0.0
+    levels_up = 0
+    while player.unallocated_xp >= _skill_cost(current + levels_up):
+        cost = _skill_cost(current + levels_up)
+        spent += cost
+        player.unallocated_xp -= cost
+        levels_up += 1
+
+    async with get_session() as session:
+        result = await session.execute(select(GamePlayer).where(GamePlayer.id == player.id))
+        p = result.scalar_one_or_none()
+        if p:
+            setattr(p, SKILL_FIELD[skill_key], current + levels_up)
+            p.unallocated_xp = player.unallocated_xp
+            await session.commit()
+
+    await ctx.finish_markdown(
+        f"📈 **训练完成**\n"
+        f"· `{SKILLS[skill_key][0]}` 提升 {levels_up} 级：`{current}` → `{current + levels_up}`\n"
+        f"· 消耗经验：`-{spent:,.0f} XP`\n"
+        f"· 剩余经验池：`{player.unallocated_xp:.0f} XP`\n"
+        f"\n"
+        f"发送 {_cmd('skills', '查看技能')} 查看技能列表"
     )
 
 
