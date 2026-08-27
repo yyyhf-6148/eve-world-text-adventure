@@ -386,6 +386,54 @@ def _security_color(security: float) -> str:
         return "🔴"
 
 
+# ==================== 菜单系统 ====================
+
+# 功能分区：key -> (标题, [(指令, 说明)])
+MENU_SECTIONS: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    "explore": ("探索", [("scan", "扫描当前星系"), ("move 星系名", "通过星门跃迁")]),
+    "mine": ("采矿", [("mine [矿石]", "采集矿石"), ("cargo", "查看货舱")]),
+    "market": ("市场", [("market", "查看行情"), ("sell 物品 [数量]", "出售"), ("buy 物品 [数量]", "购买")]),
+    "combat": ("战斗", [("hunt", "巡逻遇敌"), ("fight", "开火"), ("flee", "逃跑")]),
+    "fleet": ("舰队", [("fleet", "我的舰队"), ("upgrade 船名", "购买舰船"), ("switch 船名", "切换驾驶"), ("fittings", "配装"), ("install 装备", "安装"), ("uninstall 装备", "卸下")]),
+    "mission": ("任务", [("mission", "查看任务"), ("mission new", "接取新任务")]),
+    "status": ("状态", [("status", "我的状态"), ("attack 玩家", "PvP 攻击"), ("report", "PvP 战报")]),
+}
+
+
+def _menu_block(title: str, cmds: list[tuple[str, str]]) -> str:
+    lines = [f"**{title}**"]
+    for cmd, desc in cmds:
+        lines.append(f"· `{cmd}` — {desc}")
+    return "\n".join(lines)
+
+
+def _main_menu(name: str, sys_name: str) -> str:
+    """主菜单 markdown"""
+    lines = [
+        f"🚀 **EVE World 控制台**",
+        f"飞行员：`{name}` ｜ 位置：`{sys_name}`",
+        f"",
+    ]
+    for title, cmds in MENU_SECTIONS.values():
+        lines.append(_menu_block(title, cmds))
+        lines.append("")
+    lines.append("> 输入对应指令进入功能页，发送 `start` 随时返回主菜单")
+    return "\n".join(lines)
+
+
+def _page_hint(key: str) -> str:
+    """功能页操作提示页脚（markdown）"""
+    entry = MENU_SECTIONS.get(key)
+    if not entry:
+        return ""
+    title, cmds = entry
+    lines = ["", f"**{title}页操作：**"]
+    for cmd, desc in cmds:
+        lines.append(f"· `{cmd}` — {desc}")
+    lines.append("· `start` — 返回主菜单")
+    return "\n".join(lines)
+
+
 def _cooldown_ok(player: GamePlayer, cooldown: float = ACTION_COOLDOWN) -> bool:
     """检查行动冷却是否就绪（cooldown 秒内不可再次行动）"""
     if player.last_action_at is None:
@@ -542,61 +590,54 @@ async def _player_ship(player: GamePlayer) -> GameShip | None:
 
 # ==================== 指令 ====================
 
-@on_command("start", aliases=["注册", "开始游戏"])
+@on_command("start", aliases=["注册", "开始游戏", "菜单", "主菜单"])
 async def handle_start(ctx):
-    """注册角色"""
+    """注册角色并显示主菜单"""
     user_openid = ctx.user_openid
     if not user_openid:
-        await ctx.finish("无法获取你的身份信息")
-
-    existing = await _get_player(user_openid)
-    if existing:
-        await ctx.finish("你已经注册过角色了，发送 `status` 查看状态")
+        await ctx.finish_markdown("无法获取你的身份信息")
 
     display_name = ctx.member_username or "新飞行员"
+    is_new = False
 
-    async with get_session() as session:
-        player = GamePlayer(
-            user_openid=user_openid,
-            name=display_name,
-            system_id=START_SYSTEM_ID,
-            ship_id=1,
-            isk=100000.0,
-        )
-        # 初始船只完整状态
-        ship = await _get_ship(1)
-        if ship:
-            player.hull = ship.hull
-            player.armor = ship.armor
-            player.shield = ship.shield
-        session.add(player)
-        await session.flush()
-        # 初始舰船入仓（舰船仓库）
-        session.add(
-            GamePlayerShip(
-                player_id=player.id,
+    existing = await _get_player(user_openid)
+    if not existing:
+        is_new = True
+        async with get_session() as session:
+            player = GamePlayer(
+                user_openid=user_openid,
+                name=display_name,
+                system_id=START_SYSTEM_ID,
                 ship_id=1,
-                hull=ship.hull if ship else 150.0,
-                armor=ship.armor if ship else 120.0,
-                shield=ship.shield if ship else 150.0,
+                isk=100000.0,
             )
-        )
-        await session.commit()
+            # 初始船只完整状态
+            ship = await _get_ship(1)
+            if ship:
+                player.hull = ship.hull
+                player.armor = ship.armor
+                player.shield = ship.shield
+            session.add(player)
+            await session.flush()
+            # 初始舰船入仓（舰船仓库）
+            session.add(
+                GamePlayerShip(
+                    player_id=player.id,
+                    ship_id=1,
+                    hull=ship.hull if ship else 150.0,
+                    armor=ship.armor if ship else 120.0,
+                    shield=ship.shield if ship else 150.0,
+                )
+            )
+            await session.commit()
 
     start_sys = await _get_system(START_SYSTEM_ID)
     sys_name = start_sys.name if start_sys else "Jita"
 
-    await ctx.finish(
-        f"🚀 **欢迎加入新伊甸，飞行员 {display_name}！**\n"
-        f"\n"
-        f"· 出生星系：`{sys_name}`（{_security_color(start_sys.security if start_sys else 1.0)}{_sec_label(start_sys.security if start_sys else 1.0)}）\n"
-        f"· 初始舰船：Kestrel（加达里护卫舰）\n"
-        f"· 初始资金：`100,000 ISK`\n"
-        f"\n"
-        f"可用指令：\n"
-        f"`scan` 扫描当前星系\n"
-        f"`status` 查看自身状态\n"
-        f"`move 星系名` 通过星门移动"
+    header = f"🚀 **欢迎加入新伊甸，飞行员 {display_name}！**\n\n" if is_new else f"🚀 **欢迎回来，飞行员 {display_name}！**\n\n"
+
+    await ctx.finish_markdown(
+        header + _main_menu(display_name, sys_name)
     )
 
 
@@ -648,6 +689,7 @@ async def handle_status(ctx):
     else:
         lines.append(f"· 货舱：`0/{ship.cargo:.0f}`")
 
+    lines.append(_page_hint("status"))
     await ctx.finish_markdown("\n".join(lines))
 
 
@@ -709,6 +751,7 @@ async def handle_scan(ctx):
     else:
         lines.append("· 附近没有其他飞行员")
 
+    lines.append(_page_hint("explore"))
     await ctx.finish_markdown("\n".join(lines))
 
 
@@ -788,6 +831,7 @@ async def handle_move(ctx):
         f"{mission_note}\n"
         f"\n"
         f"发送 `scan` 扫描新星系"
+        + _page_hint("explore")
     )
 
 
@@ -862,6 +906,7 @@ async def handle_mine(ctx):
         f"{mission_done}\n"
         f"\n"
         f"发送 `sell {ore.name}` 出售，或 `market` 查看价格"
+        + _page_hint("mine")
     )
 
 
@@ -889,6 +934,7 @@ async def handle_cargo(ctx):
                 f"· `{c.item_name}` × {c.quantity:.0f}（{c.quantity * unit_vol:.1f} m³）"
             )
 
+    lines.append(_page_hint("mine"))
     await ctx.finish_markdown("\n".join(lines))
 
 
@@ -949,6 +995,7 @@ async def handle_market(ctx):
     lines.append("💡 提示：装备用 `buy` 购买，`install` 安装，受槽位和 CPU/栅格限制")
     lines.append("💡 00 区矿石收购价更高，物品售价也更贵")
 
+    lines.append(_page_hint("market"))
     await ctx.finish_markdown("\n".join(lines))
 
 
@@ -1028,6 +1075,7 @@ async def handle_sell(ctx):
         f"· 卖出 `{sell_qty:.0f} 单位` {cargo_item.item_name} @ `{unit_price:,.0f}` ISK\n"
         f"· 收入：`+{total_income:,.0f} ISK`\n"
         f"· 当前资金：`{player.isk + total_income:,.0f} ISK`"
+        + _page_hint("market")
     )
 
 
@@ -1102,6 +1150,7 @@ async def handle_buy(ctx):
         f"· 当前资金：`{player.isk - total_cost:,.0f} ISK`\n"
         f"\n"
         f"发送 `cargo` 查看货舱，装备可用 `install` 安装"
+        + _page_hint("market")
     )
 
 
@@ -1224,6 +1273,7 @@ async def handle_hunt(ctx):
         f"· 击杀奖励：`{npc.reward:,.0f} ISK` + `{npc.xp_reward:.0f}` 经验\n"
         f"\n"
         f"发送 `fight` 开火，或发送 `flee` 逃跑（有风险）"
+        + _page_hint("combat")
     )
 
 
@@ -1294,6 +1344,7 @@ async def handle_fight(ctx):
             lines.append(f"· 技能等级提升至：`{player_result.skill_level}`！")
         lines.append(f"· 当前资金：`{player_result.isk:,.0f} ISK`" if player_result else "")
         lines.append(f"\n发送 `hunt` 继续巡逻")
+        lines.append(_page_hint("combat"))
         await ctx.finish_markdown("\n".join(lines))
 
     # NPC 反击
@@ -1361,6 +1412,7 @@ async def handle_fight(ctx):
         f"· 你的护盾：`{shield_txt}` / 装甲：`{armor_txt}` / 结构：`{hull_txt}`\n"
         f"\n"
         f"发送 `fight` 继续开火，或 `flee` 逃跑"
+        + _page_hint("combat")
     )
 
 
@@ -1802,13 +1854,16 @@ async def handle_mission(ctx):
             f"· 奖励：`{mission.reward_isk:,.0f} ISK` + `{mission.reward_xp:.0f}` 经验\n"
             f"\n"
             f"发送 `mission` 查看进度"
+            + _page_hint("mission")
         )
 
     active = await _get_player_mission(player.id)
     if not active:
-        await ctx.finish(
-            f"当前没有进行中的任务。\n"
-            f"发送 `mission new` 接取新任务"
+        await ctx.finish_markdown(
+            f"📋 **任务大厅**\n"
+            f"· 当前没有进行中的任务\n"
+            f"· 发送 `mission new` 接取新任务"
+            + _page_hint("mission")
         )
     mission = await _get_mission(active.mission_id)
     if not mission:
@@ -1822,6 +1877,7 @@ async def handle_mission(ctx):
         f"· 奖励：`{mission.reward_isk:,.0f} ISK` + `{mission.reward_xp:.0f}` 经验\n"
         f"\n"
         f"💡 完成采矿/击杀/送货后自动结算"
+        + _page_hint("mission")
     )
 
 
@@ -1904,6 +1960,7 @@ async def handle_upgrade(ctx):
         f"· 当前资金：`{player.isk - target.cost:,.0f} ISK`\n"
         f"\n"
         f"发送 `switch {target.name}` 更换驾驶，`fleet` 查看舰队"
+        + _page_hint("fleet")
     )
 
 
@@ -1937,6 +1994,7 @@ async def handle_fleet(ctx):
         )
 
     lines.append("\n💡 发送 `switch 船名` 更换驾驶")
+    lines.append(_page_hint("fleet"))
     await ctx.finish_markdown("\n".join(lines))
 
 
@@ -2005,6 +2063,7 @@ async def handle_switch(ctx):
         f"· 配装：{equip_txt}\n"
         f"\n"
         f"发送 `fittings` 查看配装，`install` 安装装备"
+        + _page_hint("fleet")
     )
 
 
@@ -2222,6 +2281,7 @@ async def handle_fittings(ctx):
     lines.append("💡 用法：`install 装备名` 安装 / `uninstall 装备名` 卸下")
     lines.append("`buy 装备名` 可从市场购买装备")
 
+    lines.append(_page_hint("fleet"))
     await ctx.finish_markdown("\n".join(lines))
 
 
