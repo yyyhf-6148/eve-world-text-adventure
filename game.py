@@ -1738,8 +1738,13 @@ async def _pvp_resolve(ctx, attacker: GamePlayer, defender: GamePlayer, system: 
     atk_ship = await _get_ship(attacker.ship_id)
     def_ship = await _get_ship(defender.ship_id)
 
-    atk_power = (await _pvp_player_power(attacker, atk_ship)) * random.uniform(0.8, 1.2)
-    def_power = (await _pvp_player_power(defender, def_ship)) * random.uniform(0.8, 1.2)
+    # 基础战力（不带随机，用于经验计算）
+    atk_base = await _pvp_player_power(attacker, atk_ship)
+    def_base = await _pvp_player_power(defender, def_ship)
+
+    # 战斗判定（带随机波动）
+    atk_power = atk_base * random.uniform(0.8, 1.2)
+    def_power = def_base * random.uniform(0.8, 1.2)
 
     # 胜者
     attacker_wins = atk_power >= def_power
@@ -1749,13 +1754,21 @@ async def _pvp_resolve(ctx, attacker: GamePlayer, defender: GamePlayer, system: 
     # 掉落 20% 资金
     loser_drop = loser.isk * 0.2
 
+    # 胜利经验：按双方战力比动态调整，防刷经验
+    #   我方强于对方（战力比<1）→ 经验低；我方弱于对方（战力比>1）→ 经验高
+    winner_base = atk_base if attacker_wins else def_base
+    loser_base = def_base if attacker_wins else atk_base
+    ratio = (loser_base / winner_base) if winner_base > 0 else 1.0
+    xp_gain = XP_PVP_WIN * ratio
+    xp_gain = round(max(5.0, min(500.0, xp_gain)))  # 下限 5，上限 500
+
     async with get_session() as session:
         # 更新双方状态
         result = await session.execute(select(GamePlayer).where(GamePlayer.id == winner.id))
         w = result.scalar_one_or_none()
         if w:
             w.isk += loser_drop
-            w.unallocated_xp += XP_PVP_WIN  # PvP 胜利经验进经验池
+            w.unallocated_xp += xp_gain  # PvP 胜利经验进经验池
             w.last_action_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         result2 = await session.execute(select(GamePlayer).where(GamePlayer.id == loser.id))
@@ -1774,6 +1787,7 @@ async def _pvp_resolve(ctx, attacker: GamePlayer, defender: GamePlayer, system: 
             f"· 双方战力：{attacker.name} {atk_power:.1f} vs {defender.name} {def_power:.1f}",
             f"· 胜者：{winner.name}",
             f"· {loser.name} 被击毁，掉落 {loser_drop:,.0f} ISK",
+            f"· {winner.name} 获得 {xp_gain} XP（战力比 {ratio:.2f}）",
         ]
         log = GameBattleLog(
             attacker_openid=attacker.user_openid,
@@ -1800,6 +1814,7 @@ async def _pvp_resolve(ctx, attacker: GamePlayer, defender: GamePlayer, system: 
     ]
     if attacker_wins:
         result_lines.append(f"· 🏆 你赢得了战斗！获得 `{loser_drop:,.0f} ISK` 战利品")
+        result_lines.append(f"· 📈 获得 `+{xp_gain} XP`（对方战力比 {ratio:.2f}）")
         result_lines.append(f"· 目标已送回 Jita")
     else:
         result_lines.append(f"· 💥 你被 `{defender.name}` 击毁了！")
