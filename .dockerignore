@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+data/
+sde/universe/
+*.log
+*.err.log
+.env
+*.db
+.venv/
+venv/
+.git/
+.github/
+Dockerfile
+.gitignore
+README.md
