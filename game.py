@@ -8,6 +8,7 @@ import csv
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from sqlalchemy import func, select
 
@@ -386,13 +387,28 @@ def _security_color(security: float) -> str:
         return "🔴"
 
 
-# ==================== 菜单系统 ====================
+# ==================== 菜单系统（文字游戏界面） ====================
+
+def _cmd(text: str, show: str = "") -> str:
+    """生成点击后填入输入框的交互标签（qqbot-cmd-input，支持群聊）
+    text 为点击后填入输入框的命令，show 为消息内显示的文字"""
+    show = show or text
+    return f'<qqbot-cmd-input text="{quote(text)}" show="{quote(show)}" />'
+
+
+def _cmd_menu(cmd: str, desc: str) -> str:
+    """菜单项：无参指令可直接点击；带参指令填入"指令 "供补全"""
+    if " " in cmd:
+        base = cmd.split()[0]
+        return f"· {_cmd(base + ' ', cmd)} {desc}"
+    return f"· {_cmd(cmd, cmd)} {desc}"
+
 
 # 功能分区：key -> (标题, [(指令, 说明)])
 MENU_SECTIONS: dict[str, tuple[str, list[tuple[str, str]]]] = {
     "explore": ("探索", [("scan", "扫描当前星系"), ("move 星系名", "通过星门跃迁")]),
-    "mine": ("采矿", [("mine [矿石]", "采集矿石"), ("cargo", "查看货舱")]),
-    "market": ("市场", [("market", "查看行情"), ("sell 物品 [数量]", "出售"), ("buy 物品 [数量]", "购买")]),
+    "mine": ("采矿", [("mine", "采集矿石"), ("cargo", "查看货舱")]),
+    "market": ("市场", [("market", "查看行情"), ("sell 物品", "出售"), ("buy 物品", "购买")]),
     "combat": ("战斗", [("hunt", "巡逻遇敌"), ("fight", "开火"), ("flee", "逃跑")]),
     "fleet": ("舰队", [("fleet", "我的舰队"), ("upgrade 船名", "购买舰船"), ("switch 船名", "切换驾驶"), ("fittings", "配装"), ("install 装备", "安装"), ("uninstall 装备", "卸下")]),
     "mission": ("任务", [("mission", "查看任务"), ("mission new", "接取新任务")]),
@@ -401,36 +417,40 @@ MENU_SECTIONS: dict[str, tuple[str, list[tuple[str, str]]]] = {
 
 
 def _menu_block(title: str, cmds: list[tuple[str, str]]) -> str:
-    lines = [f"**{title}**"]
+    lines = [f"━━━ {title} ━━━"]
     for cmd, desc in cmds:
-        lines.append(f"· `{cmd}` — {desc}")
+        lines.append(_cmd_menu(cmd, desc))
     return "\n".join(lines)
 
 
 def _main_menu(name: str, sys_name: str) -> str:
-    """主菜单 markdown"""
+    """主菜单 markdown（文字游戏控制台风格）"""
     lines = [
-        f"🚀 **EVE World 控制台**",
-        f"飞行员：`{name}` ｜ 位置：`{sys_name}`",
+        f"🚀 **EVE 新伊甸 · 星海航行**",
+        f"════════════════════",
+        f"👤 飞行员：`{name}`",
+        f"📍 位置：`{sys_name}`",
         f"",
     ]
     for title, cmds in MENU_SECTIONS.values():
         lines.append(_menu_block(title, cmds))
         lines.append("")
-    lines.append("> 输入对应指令进入功能页，发送 `start` 随时返回主菜单")
+    lines.append("─────────────")
+    lines.append(f"💡 点击指令标签即可快速输入")
+    lines.append(f"🔄 发送 {_cmd('start', '主菜单')} 随时返回本页")
     return "\n".join(lines)
 
 
 def _page_hint(key: str) -> str:
-    """功能页操作提示页脚（markdown）"""
+    """功能页操作提示页脚（markdown，指令可点击）"""
     entry = MENU_SECTIONS.get(key)
     if not entry:
         return ""
     title, cmds = entry
-    lines = ["", f"**{title}页操作：**"]
+    lines = ["", f"━━━ {title}页操作 ━━━"]
     for cmd, desc in cmds:
-        lines.append(f"· `{cmd}` — {desc}")
-    lines.append("· `start` — 返回主菜单")
+        lines.append(_cmd_menu(cmd, desc))
+    lines.append(f"· {_cmd('start', '主菜单')} 返回主菜单")
     return "\n".join(lines)
 
 
@@ -738,10 +758,10 @@ async def handle_scan(ctx):
     ]
 
     if neighbor_systems:
-        lines.append("· 可前往星系：")
+        lines.append("· 可前往星系（点击跃迁）：")
         for ns in sorted(neighbor_systems, key=lambda s: s.security, reverse=True)[:10]:
             lines.append(
-                f"  {_security_color(ns.security)}`{ns.name}`（{_sec_label(ns.security)}）"
+                f"  {_security_color(ns.security)}{_cmd(f'move {ns.name}', ns.name)}（{_sec_label(ns.security)}）"
             )
     else:
         lines.append("· 无可前往星系")
@@ -830,7 +850,7 @@ async def handle_move(ctx):
         f"· 安全等级：`{target.security:.2f}` {_security_color(target.security)}{_sec_label(target.security)}"
         f"{mission_note}\n"
         f"\n"
-        f"发送 `scan` 扫描新星系"
+        f"点击 {_cmd('scan', '扫描新星系')} 查看周围环境"
         + _page_hint("explore")
     )
 
@@ -905,7 +925,7 @@ async def handle_mine(ctx):
         f"· 占用货舱：`{volume:.1f} m³`（{cargo_used:.1f}/{ship.cargo:.1f}）"
         f"{mission_done}\n"
         f"\n"
-        f"发送 `sell {ore.name}` 出售，或 `market` 查看价格"
+        f"点击 {_cmd(f'sell {ore.name}', f'出售{ore.name}')} 或 {_cmd('market', '查看价格')}"
         + _page_hint("mine")
     )
 
@@ -926,7 +946,7 @@ async def handle_cargo(ctx):
     ]
 
     if not items:
-        lines.append("· 空空如也，发送 `mine` 采矿")
+        lines.append(f"· 空空如也，点击 {_cmd('mine', '开始采矿')}")
     else:
         for c in items:
             unit_vol = _ORE_NAME_TO_VOLUME.get(c.item_name) or _ITEM_NAME_TO_VOLUME.get(c.item_name) or 1.0
@@ -1149,7 +1169,7 @@ async def handle_buy(ctx):
         f"· 花费：`-{total_cost:,.0f} ISK`\n"
         f"· 当前资金：`{player.isk - total_cost:,.0f} ISK`\n"
         f"\n"
-        f"发送 `cargo` 查看货舱，装备可用 `install` 安装"
+        f"点击 {_cmd('cargo', '查看货舱')} 装备可用 {_cmd('install', '安装')}"
         + _page_hint("market")
     )
 
@@ -1272,7 +1292,7 @@ async def handle_hunt(ctx):
         f"· 威胁程度：`{danger}`\n"
         f"· 击杀奖励：`{npc.reward:,.0f} ISK` + `{npc.xp_reward:.0f}` 经验\n"
         f"\n"
-        f"发送 `fight` 开火，或发送 `flee` 逃跑（有风险）"
+        f"点击 {_cmd('fight', '⚔️ 开火')} 或 {_cmd('flee', '🏃 逃跑')}"
         + _page_hint("combat")
     )
 
@@ -1343,7 +1363,7 @@ async def handle_fight(ctx):
         if player_result and player_result.skill_level > 0:
             lines.append(f"· 技能等级提升至：`{player_result.skill_level}`！")
         lines.append(f"· 当前资金：`{player_result.isk:,.0f} ISK`" if player_result else "")
-        lines.append(f"\n发送 `hunt` 继续巡逻")
+        lines.append(f"\n点击 {_cmd('hunt', '继续巡逻')}")
         lines.append(_page_hint("combat"))
         await ctx.finish_markdown("\n".join(lines))
 
@@ -1411,7 +1431,7 @@ async def handle_fight(ctx):
         f"· `{combat.npc_name}` 反击造成 `{npc_dmg:.0f}` 伤害\n"
         f"· 你的护盾：`{shield_txt}` / 装甲：`{armor_txt}` / 结构：`{hull_txt}`\n"
         f"\n"
-        f"发送 `fight` 继续开火，或 `flee` 逃跑"
+        f"点击 {_cmd('fight', '⚔️ 继续开火')} 或 {_cmd('flee', '🏃 逃跑')}"
         + _page_hint("combat")
     )
 
@@ -1862,7 +1882,7 @@ async def handle_mission(ctx):
         await ctx.finish_markdown(
             f"📋 **任务大厅**\n"
             f"· 当前没有进行中的任务\n"
-            f"· 发送 `mission new` 接取新任务"
+            f"· 点击 {_cmd('mission new', '接取新任务')} 领取任务"
             + _page_hint("mission")
         )
     mission = await _get_mission(active.mission_id)
