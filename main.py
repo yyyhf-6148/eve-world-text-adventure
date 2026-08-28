@@ -8,13 +8,14 @@
 
 import asyncio
 
-from db import create_tables, dispose_engine, init_db
+from db import create_tables, dispose_engine, init_db, run_migrations
 from logger import logger
 
 
 async def main():
     init_db()
     await create_tables()
+    await run_migrations()  # 已有库结构升级（补新增列）
     logger.info("数据库就绪")
 
     from server import start_server
