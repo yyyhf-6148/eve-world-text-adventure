@@ -1,0 +1,45 @@
+services:
+  game:
+    image: ghcr.io/yyyhf-6148/eve-world-text-adventure:latest
+    container_name: eve-world-game
+    restart: unless-stopped
+    environment:
+      # 监听地址与端口
+      EVE_WORLD_WS_HOST: 0.0.0.0
+      EVE_WORLD_WS_PORT: 8765
+      # 数据库（默认 SQLite，数据持久化到卷；可换 MySQL 见下方注释）
+      EVE_WORLD_DATABASE_URL: sqlite+aiosqlite:////app/data/game.db
+      EVE_WORLD_LOG_LEVEL: INFO
+      TZ: Asia/Shanghai
+    ports:
+      - "8765:8765"
+    volumes:
+      - eve_world_data:/app/data
+
+  # 如需 MySQL 数据库（可选），取消注释并修改上方 DATABASE_URL：
+  #   EVE_WORLD_DATABASE_URL: mysql+aiomysql://eveworld:${MYSQL_PASSWORD:-eveworld_pwd}@mysql:3306/eveworld?charset=utf8mb4
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: eve-world-mysql
+  #   restart: unless-stopped
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-eveworld_root_pwd}
+  #     MYSQL_DATABASE: eveworld
+  #     MYSQL_USER: eveworld
+  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD:-eveworld_pwd}
+  #     TZ: Asia/Shanghai
+  #   command:
+  #     - --character-set-server=utf8mb4
+  #     - --collation-server=utf8mb4_unicode_ci
+  #   volumes:
+  #     - eve_world_mysql:/var/lib/mysql
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-eveworld_root_pwd}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 30s
+
+volumes:
+  eve_world_data:
+  # eve_world_mysql:

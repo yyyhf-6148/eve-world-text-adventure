@@ -49,6 +49,7 @@ class GameShip(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    ship_class: Mapped[str] = mapped_column(String(20), nullable=False, default="frigate")  # frigate/destroyer/cruiser/battleship
     hull: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     armor: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     shield: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)

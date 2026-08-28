@@ -109,61 +109,188 @@ EQUIP_SKILL_BY_EFFECT = {
 MAX_ACTION = 10
 ACTION_RECOVER_SECONDS = 60
 
-# 舰船模板（真实 EVE 舰船数据：槽位/血量/栅格/CPU 参考官方 SDE）
+# 舰船模板（真实 EVE 舰船，四等级 × 四族，属性参考官方 SDE）
+# ship_class: frigate护卫/destroyer驱逐/cruiser巡洋/battleship战列
 SHIP_TEMPLATES = [
+    # ===== 护卫 frigate (舰船操控 0级) =====
     {
         "id": 1,
         "name": "Kestrel",
-        "hull": 400.0,
-        "armor": 350.0,
-        "shield": 500.0,
-        "damage": 40.0,
-        "cargo": 160.0,
-        "speed": 1.0,
-        "high_slots": 4,
-        "medium_slots": 4,
-        "low_slots": 2,
-        "cpu": 180.0,
-        "powergrid": 45.0,
-        "cost": 0.0,
-        "min_skill": 0,
-        "description": "加达里 T1 导弹护卫舰（4高/4中/2低），新手入门船",
+        "ship_class": "frigate",
+        "hull": 400.0, "armor": 350.0, "shield": 500.0, "damage": 40.0,
+        "cargo": 160.0, "speed": 1.0,
+        "high_slots": 4, "medium_slots": 4, "low_slots": 2,
+        "cpu": 180.0, "powergrid": 45.0,
+        "cost": 0.0, "min_skill": 0,
+        "description": "加达里 T1 导弹护卫舰，新手入门船",
     },
     {
         "id": 2,
-        "name": "Vexor",
-        "hull": 2000.0,
-        "armor": 2000.0,
-        "shield": 1100.0,
-        "damage": 100.0,
-        "cargo": 480.0,
-        "speed": 0.8,
-        "high_slots": 4,
-        "medium_slots": 4,
-        "low_slots": 5,
-        "cpu": 300.0,
-        "powergrid": 700.0,
-        "cost": 8000000.0,
-        "min_skill": 2,
-        "description": "盖伦特 T1 无人机巡洋舰（4高/4中/5低），高甲抗",
+        "name": "Rifter",
+        "ship_class": "frigate",
+        "hull": 400.0, "armor": 450.0, "shield": 350.0, "damage": 45.0,
+        "cargo": 140.0, "speed": 1.1,
+        "high_slots": 3, "medium_slots": 3, "low_slots": 3,
+        "cpu": 170.0, "powergrid": 35.0,
+        "cost": 150000.0, "min_skill": 0,
+        "description": "米玛塔尔 T1 射弹护卫舰，机动性强",
     },
     {
         "id": 3,
+        "name": "Incursus",
+        "ship_class": "frigate",
+        "hull": 450.0, "armor": 550.0, "shield": 300.0, "damage": 45.0,
+        "cargo": 130.0, "speed": 1.0,
+        "high_slots": 3, "medium_slots": 2, "low_slots": 3,
+        "cpu": 180.0, "powergrid": 35.0,
+        "cost": 150000.0, "min_skill": 0,
+        "description": "盖伦特 T1 混合炮护卫舰，高甲抗",
+    },
+    {
+        "id": 4,
+        "name": "Punisher",
+        "ship_class": "frigate",
+        "hull": 450.0, "armor": 500.0, "shield": 400.0, "damage": 50.0,
+        "cargo": 120.0, "speed": 0.9,
+        "high_slots": 3, "medium_slots": 2, "low_slots": 3,
+        "cpu": 160.0, "powergrid": 40.0,
+        "cost": 200000.0, "min_skill": 0,
+        "description": "艾玛 T1 激光护卫舰，火力均衡",
+    },
+    # ===== 驱逐 destroyer (舰船操控 1级) =====
+    {
+        "id": 5,
+        "name": "Cormorant",
+        "ship_class": "destroyer",
+        "hull": 600.0, "armor": 500.0, "shield": 700.0, "damage": 85.0,
+        "cargo": 350.0, "speed": 1.0,
+        "high_slots": 8, "medium_slots": 4, "low_slots": 3,
+        "cpu": 230.0, "powergrid": 100.0,
+        "cost": 1500000.0, "min_skill": 1,
+        "description": "加达里 T1 混合炮驱逐舰，多高槽",
+    },
+    {
+        "id": 6,
+        "name": "Thrasher",
+        "ship_class": "destroyer",
+        "hull": 650.0, "armor": 600.0, "shield": 600.0, "damage": 90.0,
+        "cargo": 320.0, "speed": 1.1,
+        "high_slots": 8, "medium_slots": 3, "low_slots": 3,
+        "cpu": 240.0, "powergrid": 105.0,
+        "cost": 1500000.0, "min_skill": 1,
+        "description": "米玛塔尔 T1 射弹驱逐舰，火力凶猛",
+    },
+    {
+        "id": 7,
+        "name": "Catalyst",
+        "ship_class": "destroyer",
+        "hull": 600.0, "armor": 650.0, "shield": 550.0, "damage": 95.0,
+        "cargo": 300.0, "speed": 1.0,
+        "high_slots": 8, "medium_slots": 3, "low_slots": 3,
+        "cpu": 220.0, "powergrid": 110.0,
+        "cost": 1800000.0, "min_skill": 1,
+        "description": "盖伦特 T1 混合炮驱逐舰，近距离爆发",
+    },
+    {
+        "id": 8,
+        "name": "Coercer",
+        "ship_class": "destroyer",
+        "hull": 600.0, "armor": 700.0, "shield": 600.0, "damage": 100.0,
+        "cargo": 280.0, "speed": 0.9,
+        "high_slots": 8, "medium_slots": 3, "low_slots": 3,
+        "cpu": 210.0, "powergrid": 105.0,
+        "cost": 1800000.0, "min_skill": 1,
+        "description": "艾玛 T1 激光驱逐舰，精准输出",
+    },
+    # ===== 巡洋 cruiser (舰船操控 2级) =====
+    {
+        "id": 9,
+        "name": "Vexor",
+        "ship_class": "cruiser",
+        "hull": 2000.0, "armor": 2000.0, "shield": 1100.0, "damage": 120.0,
+        "cargo": 480.0, "speed": 0.8,
+        "high_slots": 4, "medium_slots": 4, "low_slots": 5,
+        "cpu": 300.0, "powergrid": 700.0,
+        "cost": 8000000.0, "min_skill": 2,
+        "description": "盖伦特 T1 无人机巡洋舰，高甲抗",
+    },
+    {
+        "id": 10,
+        "name": "Caracal",
+        "ship_class": "cruiser",
+        "hull": 1500.0, "armor": 1200.0, "shield": 1800.0, "damage": 130.0,
+        "cargo": 400.0, "speed": 0.85,
+        "high_slots": 5, "medium_slots": 4, "low_slots": 4,
+        "cpu": 320.0, "powergrid": 750.0,
+        "cost": 10000000.0, "min_skill": 2,
+        "description": "加达里 T1 导弹巡洋舰，高盾量",
+    },
+    {
+        "id": 11,
+        "name": "Stabber",
+        "ship_class": "cruiser",
+        "hull": 1600.0, "armor": 1500.0, "shield": 1400.0, "damage": 140.0,
+        "cargo": 360.0, "speed": 0.9,
+        "high_slots": 5, "medium_slots": 4, "low_slots": 5,
+        "cpu": 330.0, "powergrid": 780.0,
+        "cost": 10000000.0, "min_skill": 2,
+        "description": "米玛塔尔 T1 射弹巡洋舰，机动火力",
+    },
+    {
+        "id": 12,
+        "name": "Omen",
+        "ship_class": "cruiser",
+        "hull": 1500.0, "armor": 1700.0, "shield": 1500.0, "damage": 150.0,
+        "cargo": 340.0, "speed": 0.8,
+        "high_slots": 5, "medium_slots": 4, "low_slots": 4,
+        "cpu": 300.0, "powergrid": 760.0,
+        "cost": 12000000.0, "min_skill": 2,
+        "description": "艾玛 T1 激光巡洋舰，高输出",
+    },
+    # ===== 战列 battleship (舰船操控 3级) =====
+    {
+        "id": 13,
         "name": "Dominix",
-        "hull": 9350.0,
-        "armor": 8800.0,
-        "shield": 7920.0,
-        "damage": 220.0,
-        "cargo": 750.0,
-        "speed": 0.5,
-        "high_slots": 6,
-        "medium_slots": 5,
-        "low_slots": 7,
-        "cpu": 600.0,
-        "powergrid": 10000.0,
-        "cost": 100000000.0,
-        "min_skill": 4,
-        "description": "盖伦特无人机战列舰（6高/5中/7低），00 区主力",
+        "ship_class": "battleship",
+        "hull": 9350.0, "armor": 8800.0, "shield": 7920.0, "damage": 230.0,
+        "cargo": 750.0, "speed": 0.5,
+        "high_slots": 6, "medium_slots": 5, "low_slots": 7,
+        "cpu": 600.0, "powergrid": 10000.0,
+        "cost": 100000000.0, "min_skill": 3,
+        "description": "盖伦特无人机战列舰，高甲抗",
+    },
+    {
+        "id": 14,
+        "name": "Raven",
+        "ship_class": "battleship",
+        "hull": 8000.0, "armor": 7500.0, "shield": 9000.0, "damage": 250.0,
+        "cargo": 650.0, "speed": 0.55,
+        "high_slots": 7, "medium_slots": 6, "low_slots": 4,
+        "cpu": 620.0, "powergrid": 12000.0,
+        "cost": 120000000.0, "min_skill": 3,
+        "description": "加达里导弹战列舰，高盾量远程",
+    },
+    {
+        "id": 15,
+        "name": "Tempest",
+        "ship_class": "battleship",
+        "hull": 8800.0, "armor": 8300.0, "shield": 8200.0, "damage": 260.0,
+        "cargo": 600.0, "speed": 0.6,
+        "high_slots": 7, "medium_slots": 5, "low_slots": 5,
+        "cpu": 600.0, "powergrid": 12500.0,
+        "cost": 120000000.0, "min_skill": 3,
+        "description": "米玛塔尔射弹战列舰，均衡全能",
+    },
+    {
+        "id": 16,
+        "name": "Apocalypse",
+        "ship_class": "battleship",
+        "hull": 8200.0, "armor": 9500.0, "shield": 7500.0, "damage": 270.0,
+        "cargo": 550.0, "speed": 0.5,
+        "high_slots": 7, "medium_slots": 5, "low_slots": 5,
+        "cpu": 580.0, "powergrid": 13000.0,
+        "cost": 150000000.0, "min_skill": 3,
+        "description": "艾玛激光战列舰，顶级火力",
     },
 ]
 
@@ -269,15 +396,20 @@ async def import_universe_csv() -> None:
 
 
 async def _ensure_ships() -> None:
-    """确保舰船模板存在"""
+    """确保舰船模板存在（增量导入：按名称判断缺失才插入）"""
     async with get_session() as session:
-        count = (await session.execute(select(func.count()).select_from(GameShip))).scalar_one()
-        if count > 0:
-            return
+        existing_names = set(
+            (await session.execute(select(GameShip.name))).scalars().all()
+        )
+        added = 0
         for s in SHIP_TEMPLATES:
+            if s["name"] in existing_names:
+                continue
             session.add(GameShip(**{k: v for k, v in s.items() if k != "id"}))
+            added += 1
         await session.commit()
-        logger.info("[world] 舰船模板初始化完成")
+        if added:
+            logger.info(f"[world] 舰船模板新增 {added} 艘")
 
 
 # 矿石模板
@@ -2008,19 +2140,35 @@ async def handle_upgrade(ctx):
 
     ship_name = ctx.args_text.strip()
 
+    # 舰船等级分组显示
+    CLASS_LABELS = {
+        "frigate": "🚀 护卫舰（操控0级）",
+        "destroyer": "⚡ 驱逐舰（操控1级）",
+        "cruiser": "🛡 巡洋舰（操控2级）",
+        "battleship": "🚢 战列舰（操控3级）",
+    }
     lines = [f"🛸 **舰船商店**\n"]
     ship_skill = _skill_level_of(player, "ship")
+    ships_by_class: dict[str, list] = {}
     for s in ships:
-        can_buy = player.isk >= s.cost and ship_skill >= s.min_skill
-        if s.id in owned_ids:
-            mark = "（当前）" if s.id == player.ship_id else "（已拥有）"
-        else:
-            mark = ""
-        lines.append(
-            f"· `{s.name}`{mark}\n"
-            f"  结构{s.hull:.0f}/装甲{s.armor:.0f}/护盾{s.shield:.0f} 火力{s.damage:.0f} 货舱{s.cargo:.0f}\n"
-            f"  价格：`{s.cost:,.0f} ISK`，需求技能：{s.min_skill}"
-        )
+        ships_by_class.setdefault(s.ship_class or "frigate", []).append(s)
+    for cls_key in ("frigate", "destroyer", "cruiser", "battleship"):
+        cls_ships = ships_by_class.get(cls_key, [])
+        if not cls_ships:
+            continue
+        lines.append(f"━━━ {CLASS_LABELS.get(cls_key, cls_key)} ━━━")
+        for s in cls_ships:
+            can_buy = player.isk >= s.cost and ship_skill >= s.min_skill
+            if s.id in owned_ids:
+                mark = "（当前）" if s.id == player.ship_id else "（已拥有）"
+            else:
+                mark = ""
+            lines.append(
+                f"· `{s.name}`{mark}\n"
+                f"  结构{s.hull:.0f}/装甲{s.armor:.0f}/护盾{s.shield:.0f} 火力{s.damage:.0f} 货舱{s.cargo:.0f}\n"
+                f"  价格：`{s.cost:,.0f} ISK`，需求操控：{s.min_skill}级"
+            )
+        lines.append("")
 
     lines.append("\n用法：upgrade 舰船名（购买后入仓，发送 `switch 船名` 更换驾驶）")
     lines.append("`fleet` 查看拥有的舰船")
